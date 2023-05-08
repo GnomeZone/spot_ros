@@ -816,13 +816,14 @@ class SpotROS:
         except tf2_ros.LookupException as e:
             rospy.logerr(str(e))
 
-    def handle_trajectory(self, req):
-        """ROS actionserver execution handler to handle receiving a request to move to a location"""
+    def handle_trajectory(self, req, trajectory_server=self.trajectory_server):
+        """ROS actionserver execution handler to handle receiving a request to move to a location.
+        The function"""
         if not self.robot_allowed_to_move():
             rospy.logerr(
                 "Trajectory service was called but robot is not allowed to move"
             )
-            self.trajectory_server.set_aborted(
+            trajectory_server.set_aborted(
                 TrajectoryResult(False, "Robot is not allowed to move.")
             )
             return
@@ -836,7 +837,7 @@ class SpotROS:
             rospy.logerr(
                 "Spot will not move as one or more of its velocity limits are set to 0. "
             )
-            self.trajectory_server.set_aborted(
+            trajectory_server.set_aborted(
                 TrajectoryResult(False, "Velocity limits are set to 0.")
             )
             return
@@ -847,12 +848,12 @@ class SpotROS:
             try:
                 target_pose = self._transform_pose_to_body_frame(target_pose)
             except tf2_ros.LookupException as e:
-                self.trajectory_server.set_aborted(
+                trajectory_server.set_aborted(
                     TrajectoryResult(False, "Could not transform pose into body frame")
                 )
                 return
         if req.duration.data.to_sec() <= 0:
-            self.trajectory_server.set_aborted(
+            trajectory_server.set_aborted(
                 TrajectoryResult(False, "duration must be larger than 0")
             )
             return
@@ -874,7 +875,7 @@ class SpotROS:
         # indicate this so we monitor it ourselves
         cmd_timeout = rospy.Timer(
             cmd_duration,
-            functools.partial(timeout_cb, self.trajectory_server),
+            functools.partial(timeout_cb, trajectory_server),
             oneshot=True,
         )
 
@@ -894,7 +895,7 @@ class SpotROS:
             cmd_timeout.shutdown()
             cmd_timeout = rospy.Timer(
                 cmd_duration,
-                functools.partial(timeout_cb, self.trajectory_server),
+                functools.partial(timeout_cb, trajectory_server),
                 oneshot=True,
             )
 
@@ -904,47 +905,80 @@ class SpotROS:
         rate = rospy.Rate(10)
         while (
             not rospy.is_shutdown()
-            and not self.trajectory_server.is_preempt_requested()
+            and not trajectory_server.is_preempt_requested()
             and not self.spot_wrapper.at_goal
-            and self.trajectory_server.is_active()
+            and trajectory_server.is_active()
             and not self.spot_wrapper._trajectory_status_unknown
         ):
             if self.spot_wrapper.near_goal:
                 if self.spot_wrapper._last_trajectory_command_precise:
-                    self.trajectory_server.publish_feedback(
+                    trajectory_server.publish_feedback(
                         TrajectoryFeedback("Near goal, performing final adjustments")
                     )
                 else:
-                    self.trajectory_server.publish_feedback(
-                        TrajectoryFeedback("Near goal")
-                    )
+                    trajectory_server.publish_feedback(TrajectoryFeedback("Near goal"))
             else:
-                self.trajectory_server.publish_feedback(
-                    TrajectoryFeedback("Moving to goal")
-                )
+                trajectory_server.publish_feedback(TrajectoryFeedback("Moving to goal"))
             rate.sleep()
 
         # If still active after exiting the loop, the command did not time out
-        if self.trajectory_server.is_active():
+        if trajectory_server.is_active():
             cmd_timeout.shutdown()
-            if self.trajectory_server.is_preempt_requested():
-                self.trajectory_server.publish_feedback(TrajectoryFeedback("Preempted"))
-                self.trajectory_server.set_preempted()
+            if trajectory_server.is_preempt_requested():
+                trajectory_server.publish_feedback(TrajectoryFeedback("Preempted"))
+                trajectory_server.set_preempted()
                 self.spot_wrapper.stop()
                 return
 
             if self.spot_wrapper.at_goal:
-                self.trajectory_server.publish_feedback(
-                    TrajectoryFeedback("Reached goal")
-                )
-                self.trajectory_server.set_succeeded(TrajectoryResult(resp[0], resp[1]))
+                trajectory_server.publish_feedback(TrajectoryFeedback("Reached goal"))
+                trajectory_server.set_succeeded(TrajectoryResult(resp[0], resp[1]))
             else:
-                self.trajectory_server.publish_feedback(
+                trajectory_server.publish_feedback(
                     TrajectoryFeedback("Failed to reach goal")
                 )
-                self.trajectory_server.set_aborted(
+                trajectory_server.set_aborted(
                     TrajectoryResult(False, "Failed to reach goal")
                 )
+
+    def handle_forward_trajectory(self, req):
+        """Calculates the orientation such that the robot is facing forward upon arrival at the goal, and then hands command to handle_trajectory"""
+        target_pose = req.target_pose
+        if req.target_pose.header.frame_id == "body":
+            req.target_pose.orientation.x = 0
+            req.target_pose.orientation.y = 0
+            req.target_pose.orientation.z = 0
+            req.target_pose.orientation.w = 1
+            self.handle_trajectory(
+                req, trajectory_server=self.forward_trajectory_server
+            )
+        else:
+            try:
+                frame_to_body = self.tf_buffer.lookup_transform(
+                    req.target_pose.header.frame_id, "body", rospy.Time()
+                )
+                vector = [
+                    target_pose.pose.x - frame_to_body.transform.translation.x,
+                    target_pose.pose.y - frame_to_body.transform.translation.y,
+                ]
+                angle = math.atan2(vector[1], vector[0])
+                quat = math_helpers.Quat.from_yaw(angle)
+                req.target_pose.orientation.x = quat.x
+                req.target_pose.orientation.y = quat.y
+                req.target_pose.orientation.z = quat.z
+                req.target_pose.orientation.w = quat.w
+                self.handle_trajectory(
+                    req, trajectory_server=self.forward_trajectory_server
+                )
+            except (
+                tf2_ros.LookupException,
+                tf2_ros.ConnectivityException,
+                tf2_ros.ExtrapolationException,
+            ):
+                self.forward_trajectory_server.set_aborted(
+                    TrajectoryResult(False, "Could not transform pose into body frame")
+                )
+                return
 
     def handle_roll_over_right(self, req):
         """Robot sit down and roll on to it its side for easier battery access"""
@@ -1776,6 +1810,14 @@ class SpotROS:
             auto_start=False,
         )
         self.trajectory_server.start()
+
+        self.forward_trajectory_server = actionlib.SimpleActionServer(
+            "forward_trajectory",
+            TrajectoryAction,
+            execute_cb=self.handle_forward_trajectory,
+            auto_start=False,
+        )
+        self.forward_trajectory_server.start()
 
         self.motion_or_idle_body_pose_as = actionlib.SimpleActionServer(
             "motion_or_idle_body_pose",
