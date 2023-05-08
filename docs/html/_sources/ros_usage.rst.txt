@@ -352,6 +352,18 @@ You can test the actionserver by using an action client
 
 And fill in the values as you like.
 
+Forward Action Server
+~~~~~~~~~~~~
+
+If you send commands to the ``/spot/trajectory`` action server in a frame other than ``body`` without filling in the ``orientation`` 
+field, the default quaternion of [0 0 0 0] will be used. When this is converted by ROS into the body frame, a quaternion which equates 
+to a 180 degree rotation around the z axis is produced. This will cause the robot to move to the goal location, but rotating 180 degrees
+as it does so. 
+
+If you want to avoid these rotations, you can use the ``/spot/forward_trajectory`` action server.This action server will take the same 
+inputs as the ``/spot/trajectory`` action server, but will calculate the orientation of the goal pose to ensure the robot is facing in 
+the direction it was travelling when it reaches the goal.
+
 Rviz
 ~~~~
 

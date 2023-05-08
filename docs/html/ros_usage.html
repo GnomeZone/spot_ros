@@ -25,14 +25,18 @@
     <nav data-toggle="wy-nav-shift" class="wy-nav-side">
       <div class="wy-side-scroll">
         <div class="wy-side-nav-search" >
-            <a href="index.html" class="icon icon-home"> Spot ROS User Documentation
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            Spot ROS User Documentation
           </a>
               <div class="version">
                 1.0.0
               </div>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
-    <input type="text" name="q" placeholder="Search docs" />
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
     <input type="hidden" name="check_keywords" value="yes" />
     <input type="hidden" name="area" value="default" />
   </form>
@@ -76,6 +80,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#moving-to-a-pose">Moving to a pose</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#ros-topic">ROS Topic</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#id4">Actionserver</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#forward-action-server">Forward Action Server</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#id5">Rviz</a></li>
 </ul>
 </li>
@@ -110,8 +115,8 @@
         <div class="rst-content">
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
-      <li><a href="index.html" class="icon icon-home"></a> &raquo;</li>
-      <li>Basic Driver Usage</li>
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Basic Driver Usage</li>
       <li class="wy-breadcrumbs-aside">
             <a href="_sources/ros_usage.rst.txt" rel="nofollow"> View page source</a>
       </li>
@@ -437,6 +442,16 @@ and not make much effort to align to the orientation.</p>
 </pre></div>
 </div>
 <p>And fill in the values as you like.</p>
+</div>
+<div class="section" id="forward-action-server">
+<h3>Forward Action Server<a class="headerlink" href="#forward-action-server" title="Permalink to this headline">¶</a></h3>
+<p>If you send commands to the <code class="docutils literal notranslate"><span class="pre">/spot/trajectory</span></code> action server in a frame other than <code class="docutils literal notranslate"><span class="pre">body</span></code> without filling in the <code class="docutils literal notranslate"><span class="pre">orientation</span></code>
+field, the default quaternion of [0 0 0 0] will be used. When this is converted by ROS into the body frame, a quaternion which equates
+to a 180 degree rotation around the z axis is produced. This will cause the robot to move to the goal location, but rotating 180 degrees
+as it does so.</p>
+<p>If you want to avoid these rotations, you can use the <code class="docutils literal notranslate"><span class="pre">/spot/forward_trajectory</span></code> action server.This action server will take the same
+inputs as the <code class="docutils literal notranslate"><span class="pre">/spot/trajectory</span></code> action server, but will calculate the orientation of the goal pose to ensure the robot is facing in
+the direction it was travelling when it reaches the goal.</p>
 </div>
 <div class="section" id="id5">
 <h3>Rviz<a class="headerlink" href="#id5" title="Permalink to this headline">¶</a></h3>
